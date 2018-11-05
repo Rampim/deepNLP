@@ -21,14 +21,14 @@ for line in lines:
     _line = line.split(' +++$+++ ')
     if len(_line)==5:
         id2line[_line[0]]=_line[4]
-        
+
 # Creating a list of all of the conversations
 conversations_ids = []
 for conversation in conversations[:-1]:
     _conversation = conversation.split(' +++$+++ ')[-1][1:-1].replace("'","").replace(" ","")
     conversations_ids.append(_conversation.split(','))
-    
-    
+
+
 # Getting separately the questions and the answers
 questions = []
 answers = []
@@ -36,7 +36,7 @@ for conversation in conversations_ids:
     for i in range(len(conversation)-1):
         questions.append(id2line[conversation[i]])
         answers.append(id2line[conversation[i+1]])
-        
+
 # Doing a first cleaning of the texts
 def clean_text(text):
     text=text.lower()
@@ -54,17 +54,17 @@ def clean_text(text):
     text=re.sub(r"can't","cannot",text)
     text=re.sub(r"[-()\"#/@;:<>{}+=~|.?,]","",text)
     return text
-                   
+
 # Cleaning the questions
 clean_questions=[]
 for question in questions:
     clean_questions.append(clean_text(question))
 
-# Cleaning the answers 
+# Cleaning the answers
 clean_answers=[]
 for answer in answers:
     clean_answers.append(clean_text(answer))
-    
+
 # Creating a dictionary that maps each word to its number of occurences
 word2count={}
 for question in clean_questions:
@@ -79,8 +79,8 @@ for answer in clean_answers:
             word2count[word]=1
         else:
             word2count[word]+=1
-        
-        
+
+
 # Creating two dictionaries that map the questions words and the answer words to a unique integer
 threshold = 20
 
@@ -103,14 +103,14 @@ for token in tokens:
     questionswords2int[token]=len(questionswords2int)+1
 for token in tokens:
     answerswords2int[token]=len(answerswords2int)+1
-    
+
 # Creating the inverse dictionary of the answerswords2int dictionary
 answersint2word={w_i:w for w, w_i in answerswords2int.items()}
-    
+
 # Adding the End of String token to the end of every answer
 for i in range(len(clean_answers)):
     clean_answers[i]+=' <EOS>'
-    
+
 # Translating all the questions and the answers into integers
 # and Replacing all the words that were filtered out by <OUT>
 questions_into_int=[]
@@ -144,7 +144,7 @@ for lenght in range(1,25 + 1):
 
 
 ############### PART 2 - BUILDING THE SEQ2SEQ MODEL ##################
-            
+
 # Creating placeholder for the inputs and the targets
 def model_inputs():
     inputs=tf.placeholder(tf.int32,[None,None],name='input')
@@ -162,7 +162,7 @@ def preprocess_targets(targets,word2int,batch_size):
     return preprocessed_targets
 
 # Creating the encoder RNN layer
-def encoder_rnn_layer(rnn_inputs,rnn_size,num_layers,keep_prob,sequence_length):
+def encoder_rnn(rnn_inputs,rnn_size,num_layers,keep_prob,sequence_length):
   lstm = tf.contrib.rnn.BasicLSTMCell(rnn_size)
   lstm_dropout=tf.contrib.rnn.DropoutWrapper(lstm, inout_keep_prob=keep_prob)
   encoder_cell=tf.contrib.rnn.MultiRNNCell([lstm_dropout]*num_layers)
@@ -191,5 +191,28 @@ def decode_training_set(encoder_state, decoder_cell, decoder_embedded_input, seq
                                                                                                             scope=decoding_scope)
   decoder_output_dropout=tf.nn.dropout(decoder_output,keep_prob)
   return output_function(decoder_output_dropout)
-  
+
+
 # Decoding the test/validation set
+def decode_test_set(encoder_state, decoder_cell, decoder_embeddings_matrix, sos_id, eos_id, maximun_length, num_words, sequence_length,decoding_scope,output_function,keep_prob,batch_size):
+  attention_states=tf.zeros([batch_size,1,decoder_cell.output_size])
+  attention_keys,attention_values,attention_score_function,attention_construct_function=tf.contrib.seq2seq.prepare_attention(attention_states,attention_option='bahdanau',num_units=decoder_cell.output_size)
+  test_decoder_function=tf.contrib.seq2seq.attention_decoder_fn_inference(output_function,
+                                                                          encoder_state[0],
+                                                                          attention_keys,
+                                                                          attention_values,
+                                                                          attention_score_function,
+                                                                          attention_construct_function,
+                                                                          decoder_embeddings_matrix,
+                                                                          sos_id,
+                                                                          eos_id,
+                                                                          maximun_length,
+                                                                          num_words,
+                                                                          name="attn_dec_inf")
+  test_predictions, decoder_final_state, decoder_final_context_state = tf.contrib.seq2seq.dynamic_rnn_decoder(decoder_cell,
+                                                                                                              test_decoder_function,
+                                                                                                              scope=decoding_scope)
+
+  return test_predictions
+
+
